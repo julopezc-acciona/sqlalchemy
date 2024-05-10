@@ -40,6 +40,8 @@ def _is_compiled() -> bool:
 
 # END GENERATED CYTHON IMPORT
 
+from typing import Literal
+MD_INDEX: Literal[0] = 0
 
 @cython.cclass
 class BaseRow:
@@ -118,12 +120,31 @@ class BaseRow:
     def _get_by_key_impl_mapping(self, key: _KeyType) -> Any:
         return self._get_by_key_impl(key, False)
 
-    @cython.cfunc
-    def _get_by_key_impl(self, key: _KeyType, attr_err: cython.bint) -> object:
-        index: Optional[int] = self._key_to_index.get(key)
-        if index is not None:
-            return self._data[index]
-        self._parent._key_not_found(key, attr_err)
+    def _get_by_key_impl(self, key):
+        if int in key.__class__.__mro__:
+            return self._data[key]
+        # the following is all LegacyRow support.   none of this
+        # should be called if not LegacyRow
+        # assert isinstance(self, LegacyRow)
+
+        try:
+            rec = self._keymap[key]
+        except KeyError as ke:
+            if isinstance(key, slice):
+                return tuple(self._data[key])
+            else:
+                rec = self._parent._key_fallback(key, ke)
+        except TypeError:
+            if isinstance(key, slice):
+                return tuple(self._data[key])
+            else:
+                raise
+
+        mdindex = rec[MD_INDEX]
+        if mdindex is None:
+            self._parent._raise_for_ambiguous_column_name(rec)
+
+        return self._data[mdindex]
 
     @cython.annotation_typing(False)
     def __getattr__(self, name: str) -> Any:
